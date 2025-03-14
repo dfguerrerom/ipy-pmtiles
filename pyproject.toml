@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=61.2", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyvectortiles"
+version = "0.0.0"
+description = "Dynamic vector tile server for visualizing vectors in Jupyter notebooks"
+readme = { file = "README.rst",  content-type = "text/x-rst" }
+authors = [
+    { name = "Daniel Guerrero", email = "dfgm2006@gmail.com" }
+]
+dependencies = [
+    "starlette",
+    "uvicorn",
+    "pydantic",
+    "httpx",
+    "colorlog"
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+
+requires-python = ">=3.9"
+urls = {Homepage = "https://github.com/dfguerrerom/pyvectortiles"}
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=2.18.0",
+    "commitizen",
+    "nox",
+    "tomli",
+    "mypy",
+    "pytest",
+    "flask",
+]
+
+[tool.setuptools.packages.find]
+include = ["pyvectortiles*"]
+
+[tool.ruff]
+ignore-init-module-imports = true
+fix = true
+
+[tool.ruff.flake8-quotes]
+docstring-quotes = "double"
+
+[tool.ruff.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = "tests"
+
+[tool.coverage.run]
+source = ["pyvectortiles"]
+branch = true
+
+[tool.commitizen]
+tag_format = "v$major.$minor.$patch$prerelease"
+update_changelog_on_bump = false
+version = "1.2.2"
+version_files = [
+    "pyproject.toml:version",
+    "pyvectortiles/__init__.py:__version__",
+]

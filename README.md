@@ -1,2 +1,3 @@
-# localvectortileserver
-🌐 dynamic vector tile server for visualizing vectors in Jupyter with ipyleaflet
+# 🌐 Local Vector Tiles Server
+
+Dynamic vector tile server for visualizing vectors in Jupyter
