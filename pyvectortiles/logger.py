@@ -11,19 +11,6 @@ YELLOW_BG = "\033[43m"
 RESET = "\033[0m"
 
 
-class InMemoryLogHandler(logging.Handler):
-    def __init__(self):
-        super().__init__()
-        self.log_buffer = io.StringIO()
-
-    def emit(self, record):
-        msg = self.format(record)
-        self.log_buffer.write(msg + "\n")
-
-    def get_logs(self):
-        return self.log_buffer.getvalue()
-
-
 class CustomLogger:
     def __init__(
         self, name: str, level: int = logging.DEBUG, module_color: str = YELLOW_BG
@@ -70,7 +57,4 @@ class CustomLogger:
 
 
 logger = CustomLogger("VECTORTILES", module_color=PURPLE_BG)
-in_memory_handler = InMemoryLogHandler()
 formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-in_memory_handler.setFormatter(formatter)
-logger.logger.addHandler(InMemoryLogHandler())

@@ -13,7 +13,7 @@ from starlette.requests import Request
 
 from aiopmtiles import Reader
 import re
-from pyvectortiles.logger import logger, in_memory_handler
+from pyvectortiles.logger import logger
 
 if TYPE_CHECKING:
     from pyvectortiles.server import TileServer
@@ -90,20 +90,6 @@ async def metadata_endpoint(request, tile_server_instance: "TileServer") -> Resp
 
     if not metadata_path.exists():
         # Return default metadata if no file exists.
-        server_metadata = {
-            "pyvectorserver": {
-                "name": "PMTiles Server",
-                "description": "Locally served PMTiles",
-                "version": "1.0.0",
-                "server_url": f"http://{tile_server_instance.config.host}:{tile_server_instance.config.port}",
-                "pmtiles_url": f"http://{tile_server_instance.config.host}:{tile_server_instance.config.port}/pmtiles",
-            }
-        }
-
-        async with Reader(file_path_str) as src:
-            file_metadata = await src.metadata()
-
-        metadata = {**server_metadata, **file_metadata}
 
         return JSONResponse(metadata)
 
@@ -192,12 +178,6 @@ async def pmtiles_endpoint(
 async def health_endpoint(request: Request) -> Response:
     """Health check endpoint."""
     return JSONResponse({"status": "ok", "server_version": "1.0.0"})
-
-
-async def logs_endpoint(request: Request) -> Response:
-    """Endpoint to retrieve server logs."""
-    logs = in_memory_handler.get_logs()
-    return PlainTextResponse(logs, media_type="text/plain")
 
 
 async def shutdown_endpoint(

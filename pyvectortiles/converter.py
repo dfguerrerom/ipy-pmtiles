@@ -110,9 +110,6 @@ class TileConverter:
             logger.error(f"Tippecanoe error: {e.stderr}")
             raise RuntimeError(f"Tippecanoe conversion failed: {e.stderr}")
 
-        # Create metadata file
-        self._create_metadata(pmtiles_path)
-
         return self.output_path
 
     def _ensure_geojson(self, input_path: Path) -> Path:
@@ -138,24 +135,3 @@ class TileConverter:
         gdf.to_file(geojson_path, driver="GeoJSON")
 
         return geojson_path
-
-    def _create_metadata(self, pmtiles_path: Path):
-        """
-        Create a metadata file for the PMTiles.
-
-        Args:
-            pmtiles_path: Path to the PMTiles file
-        """
-        metadata = {
-            "name": self.input_path.stem,
-            "description": f"PMTiles generated from {self.input_path}",
-            "version": "1.0.0",
-            "format": "pbf",
-            "source": str(self.input_path),
-            "pmtiles_path": str(pmtiles_path),
-            "attribution": "Generated with pyvectortiles",
-        }
-
-        metadata_path = self.output_path / "metadata.json"
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f, indent=2)

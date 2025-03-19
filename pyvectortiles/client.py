@@ -6,11 +6,16 @@ from typing import Dict, Union, Optional, Any, List
 import shutil
 
 import httpx
+from pyvectortiles.handler import (
+    get_metadata,
+    get_source_bounds,
+)
+from pyvectortiles.styles import generate_default_map_style
 from pyvectortiles.logger import logger
 
 from .server import TileServer
 from .converter import TileConverter
-from .utils import is_port_in_use, detect_file_type
+from .utils import is_port_in_use
 
 
 class TileClient:
@@ -26,7 +31,6 @@ class TileClient:
         host: str = "localhost",
         port: Optional[int] = None,
         converter: Optional[TileConverter] = None,
-        convert_if_needed: bool = True,
         conversion_options: Dict[str, Any] = None,
         allowed_directories: List[Union[str, Path]] = None,
         http_client: Optional[httpx.AsyncClient] = None,
@@ -40,7 +44,6 @@ class TileClient:
             host: Host where the server is running.
             port: Port where the server is running.
             converter: Custom TileConverter instance to use.
-            convert_if_needed: Whether to convert the data source to PMTiles if needed.
             conversion_options: Options to pass to the tile converter.
             allowed_directories: List of directories that can be accessed by the server.
             http_client: Custom HTTP client for testing.
@@ -56,12 +59,11 @@ class TileClient:
         self.allowed_directories = allowed_directories
         self._http_client = http_client
 
-        # Initialize the pmtiles_directory
         self.pmtiles_directory = self._determine_pmtiles_directory()
+        self.metadata = None
 
-        # Process the data source
         if self.data_source:
-            self._process_data_source(convert_if_needed)
+            self._process_data_source()
         elif self.pmtiles_directory:
             self._find_existing_pmtiles()
 
@@ -77,6 +79,86 @@ class TileClient:
         # Store the server URL
         self.server_url = f"http://{self.host}:{self.port}"
 
+    @property
+    def pmtiles_url(self) -> str:
+        """Get the URL for the PMTiles file with its filePath."""
+        return f"{self.server_url}/pmtiles?filePath={self.pmtiles_path}"
+
+    def get_metadata(self) -> Dict[str, Any]:
+        """Get metadata for the PMTiles file."""
+        return asyncio.run(get_metadata(self.pmtiles_path))
+
+    def list_layers(self):
+        """Return a list of available vector layer IDs from the metadata."""
+        return [layer.get("id") for layer in self.metadata.get("vector_layers", [])]
+
+    def bounds(
+        self,
+        projection: str = "EPSG:4326",
+        return_polygon: bool = False,
+        return_wkt: bool = False,
+    ):
+        bounds = get_source_bounds(self.metadata, projection=projection)
+        extent = (bounds["bottom"], bounds["top"], bounds["left"], bounds["right"])
+        if not return_polygon and not return_wkt:
+            return extent
+        # Safely import shapely
+        try:
+            from shapely.geometry import Polygon
+        except ImportError as e:  # pragma: no cover
+            raise ImportError(f"Please install `shapely`: {e}")
+        coords = (
+            (bounds["left"], bounds["top"]),
+            (bounds["left"], bounds["top"]),
+            (bounds["right"], bounds["top"]),
+            (bounds["right"], bounds["bottom"]),
+            (bounds["left"], bounds["bottom"]),
+            (bounds["left"], bounds["top"]),  # Close the loop
+        )
+        poly = Polygon(coords)
+        if return_wkt:
+            return poly.wkt
+        return poly
+
+    def center(
+        self,
+        projection: str = "EPSG:4326",
+        return_point: bool = False,
+        return_wkt: bool = False,
+    ):
+        """Get center in the form of (y <lat>, x <lon>).
+
+        Parameters
+        ----------
+        projection : str
+            The srs or projection as a Proj4 string of the returned coordinates
+
+        return_point : bool, optional
+            If true, returns a shapely.Point object.
+
+        return_wkt : bool, optional
+            If true, returns a Well Known Text (WKT) string of center
+            coordinates.
+
+        """
+        bounds = self.bounds(projection=projection)
+        point = (
+            (bounds[1] - bounds[0]) / 2 + bounds[0],
+            (bounds[3] - bounds[2]) / 2 + bounds[2],
+        )
+        if return_point or return_wkt:
+            # Safely import shapely
+            try:
+                from shapely.geometry import Point
+            except ImportError as e:  # pragma: no cover
+                raise ImportError(f"Please install `shapely`: {e}")
+
+            point = Point(point)
+            if return_wkt:
+                return point.wkt
+
+        return point
+
     def _determine_pmtiles_directory(self) -> Path:
         """
         Determine the PMTiles directory based on input and data source.
@@ -87,48 +169,20 @@ class TileClient:
         Returns:
             Path object for the PMTiles directory
         """
-        if self.data_source is not None:
+        if self.data_source:
             if self.data_source.suffix.lower() == ".pmtiles":
                 return self.data_source.parent
             else:
                 return self.data_source.parent / f"{self.data_source.stem}_pmtiles"
         return None
 
-    def _find_pmtiles_files(self, directory: Path) -> List[Path]:
-        """
-        Find PMTiles files in a directory.
+    def _process_data_source(self) -> None:
+        """Process the data source file."""
 
-        Args:
-            directory: Directory to search
-
-        Returns:
-            List of PMTiles file paths
-        """
-        return list(directory.glob("*.pmtiles"))
-
-    def _ensure_directory(self, path: Path) -> Path:
-        """
-        Ensure a directory exists.
-
-        Args:
-            path: Directory path
-
-        Returns:
-            The same path
-        """
-        os.makedirs(path, exist_ok=True)
-        return path
-
-    def _process_data_source(self, convert_if_needed: bool) -> None:
-        """
-        Process the data source file.
-
-        Args:
-            convert_if_needed: Whether to convert non-PMTiles data sources
-        """
         if self.data_source.suffix.lower() == ".pmtiles":
             self._handle_pmtiles()
-        elif convert_if_needed:
+
+        else:
             # For other vector formats
             if self.pmtiles_directory.exists():
                 existing_pmtiles = self._find_pmtiles_files(self.pmtiles_directory)
@@ -141,8 +195,11 @@ class TileClient:
                 self._ensure_directory(self.pmtiles_directory)
                 self._convert_vector_data()
 
+        self.metadata = self.get_metadata()
+
     def _find_existing_pmtiles(self) -> None:
-        """Find existing PMTiles files in the specified directory."""
+        """Find existing PMTiles files in the pmtiles directory."""
+
         if self.pmtiles_directory and self.pmtiles_directory.exists():
             existing_pmtiles = self._find_pmtiles_files(self.pmtiles_directory)
             if existing_pmtiles:
@@ -152,8 +209,7 @@ class TileClient:
                 )
 
     def _handle_pmtiles(self) -> None:
-        """
-        Handle a PMTiles file directly without conversion.
+        """Handle a PMTiles file directly without conversion.
 
         If the metadata file is not present in the same folder as the PMTiles file,
         create it.
@@ -163,10 +219,8 @@ class TileClient:
         if not self.data_source.exists():
             raise FileNotFoundError(f"PMTiles file not found: {self.data_source}")
 
-        # Ensure the pmtiles_directory exists
         self._ensure_directory(self.pmtiles_directory)
 
-        # Copy the PMTiles file into the pmtiles_directory if necessary
         dest_file = self.pmtiles_directory / self.data_source.name
         if (
             not dest_file.exists()
@@ -176,38 +230,6 @@ class TileClient:
             shutil.copy2(self.data_source, dest_file)
 
         self.pmtiles_path = dest_file
-
-        # Check if the metadata file exists in the same folder; create it if missing
-        self._ensure_metadata_exists()
-
-    def _ensure_metadata_exists(self) -> None:
-        """
-        Ensure metadata file exists for the PMTiles file.
-        Creates it if missing.
-        """
-        metadata_path = self.pmtiles_directory / "metadata.json"
-        if not metadata_path.exists():
-            metadata = {
-                "name": (
-                    self.data_source.stem
-                    if self.data_source
-                    else self.pmtiles_path.stem
-                ),
-                "description": (
-                    f"PMTiles from {self.data_source}"
-                    if self.data_source
-                    else "PMTiles file"
-                ),
-                "version": "1.0.0",
-                "format": "pbf",
-                "pmtiles_path": str(self.pmtiles_path),
-                "attribution": "PMTiles source",
-            }
-            with open(metadata_path, "w") as f:
-                json.dump(metadata, f, indent=2)
-            logger.info(f"Created metadata file at {metadata_path}")
-        else:
-            logger.info(f"Metadata file already exists at {metadata_path}")
 
     def _convert_vector_data(self) -> None:
         """
@@ -251,101 +273,40 @@ class TileClient:
         )
         self.port = server.config.port
 
-    def get_pmtiles_url(self) -> str:
-        """
-        Get the URL for the PMTiles file with its filePath.
-
-        Returns:
-            URL string for accessing the PMTiles file
-        """
-        return f"{self.server_url}/pmtiles?filePath={self.pmtiles_path}"
-
-    async def _get_http_client(self) -> httpx.AsyncClient:
-        """
-        Get an HTTP client instance, creating one if needed.
-
-        Returns:
-            AsyncClient instance
-        """
-        if self._http_client is None:
-            self._http_client = httpx.AsyncClient()
-        return self._http_client
-
-    async def get_metadata(self) -> Dict[str, Any]:
-        """
-        Fetch metadata about the tiles.
-
-        Returns:
-            Dictionary of metadata
-
-        Raises:
-            httpx.HTTPError: If the HTTP request fails
-        """
-        url = f"{self.server_url}/metadata?filePath={self.pmtiles_path}"
-        client = await self._get_http_client()
-
-        try:
-            response = await client.get(url)
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPError as e:
-            logger.error(f"Error fetching metadata: {e}")
-            raise
-
-    async def health_check(self) -> bool:
-        """
-        Check if the server is healthy.
-
-        Returns:
-            True if server is healthy, False otherwise
-        """
-        url = f"{self.server_url}/health"
-        client = await self._get_http_client()
-
-        try:
-            response = await client.get(url)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("status") == "ok"
-        except Exception as e:
-            logger.error(f"Health check failed: {e}")
-            return False
-
-    def create_leaflet_layer(self, style: Optional[Dict[str, Any]] = None):
-        """
-        Create a PMTiles layer for ipyleaflet.
+    def create_leaflet_layer(
+        self,
+        style: Optional[Dict[str, Any]] = None,
+        layers_to_show: Optional[List[str]] = None,
+    ) -> Any:
+        """Create a PMTiles layer for ipyleaflet.
 
         Args:
             style: Optional custom style for the layer
 
-        Returns:
-            ipyleaflet.PMTilesLayer
-
-        Raises:
-            ImportError: If ipyleaflet is not installed
         """
         try:
             from ipyleaflet import PMTilesLayer
 
-            default_style = {
-                "layers": [
-                    {
-                        "id": "vector_layer",
-                        "source": "pmtiles_source",
-                        "source-layer": self.pmtiles_path.stem,
-                        "type": "fill",
-                        "paint": {
-                            "fill-color": "red",
-                            "border-color": "black",
-                            "border-width": 1,
-                        },
-                    },
+            style_json = generate_default_map_style(self.metadata, self.pmtiles_url)
+
+            logger.debug(f"Generated style JSON: {json.dumps(style_json, indent=2)}")
+
+            if layers_to_show:
+                if not all(layer in self.list_layers() for layer in layers_to_show):
+                    raise ValueError(
+                        f"Invalid layer IDs provided. Available layers: {self.list_layers()}"
+                    )
+                style_json["layers"] = [
+                    layer
+                    for layer in style_json["layers"]
+                    if layer["source-layer"] in layers_to_show
                 ]
-            }
+
+                logger.debug(f"Filtered style JSON: {json.dumps(style_json, indent=2)}")
 
             return PMTilesLayer(
-                url=self.get_pmtiles_url(),
-                style=style or default_style,
+                url=self.pmtiles_url,
+                style=style or style_json,
                 attribution="Vector Tile Server",
                 visible=True,
             )
@@ -355,25 +316,15 @@ class TileClient:
                 "Install it with 'pip install ipyleaflet'."
             )
 
-    async def close(self) -> None:
-        """
-        Clean up resources used by the client.
-        """
-        if self._http_client:
-            await self._http_client.aclose()
-            self._http_client = None
+    @staticmethod
+    def _find_pmtiles_files(directory: Path) -> List[Path]:
+        """Find PMTiles files in a directory."""
 
-    async def __aenter__(self) -> "TileClient":
-        """
-        Async context manager entry.
+        return list(directory.glob("*.pmtiles"))
 
-        Returns:
-            Self
-        """
-        return self
+    @staticmethod
+    def _ensure_directory(path: Path) -> Path:
+        """Ensure a directory exists."""
+        path.mkdir(parents=True, exist_ok=True)
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """
-        Async context manager exit.
-        """
-        await self.close()
+        return path
