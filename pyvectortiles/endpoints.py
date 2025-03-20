@@ -5,7 +5,6 @@ from pathlib import Path
 
 from starlette.responses import (
     Response,
-    JSONResponse,
     PlainTextResponse,
     FileResponse,
     StreamingResponse,
@@ -68,48 +67,7 @@ def _validate_file_path(
 
         return "Access denied: File path is outside allowed directories"
     except Exception as e:
-        raise e
         return f"Invalid file path: {str(e)}"
-
-
-async def metadata_endpoint(request, tile_server_instance: "TileServer") -> Response:
-    """get Metadata."""
-
-    file_path_str = request.query_params.get("filePath")
-    file_path = Path(file_path_str)
-
-    if not file_path_str:
-        return PlainTextResponse("Filename not specified", status_code=400)
-
-    validation_error = _validate_file_path(file_path, tile_server_instance)
-    if validation_error:
-        return PlainTextResponse(validation_error, status_code=403)
-
-    metadata_path = file_path.parent / "metadata.json"
-
-    if not metadata_path.exists():
-        # Return default metadata if no file exists.
-
-        return JSONResponse(metadata)
-
-    # Read metadata from file and update with server info.
-    try:
-        with open(metadata_path, "r") as f:
-            import json
-
-            metadata = json.load(f)
-    except json.JSONDecodeError:
-        return PlainTextResponse("Invalid metadata JSON", status_code=500)
-    except Exception as e:
-        return PlainTextResponse(f"Error reading metadata: {str(e)}", status_code=500)
-
-    metadata["server_url"] = (
-        f"http://{tile_server_instance.config.host}:{tile_server_instance.config.port}"
-    )
-    metadata["pmtiles_url"] = (
-        f"http://{tile_server_instance.config.host}:{tile_server_instance.config.port}/pmtiles"
-    )
-    return JSONResponse(metadata)
 
 
 async def pmtiles_endpoint(

@@ -1,8 +1,6 @@
 import sys
 import logging
-from pathlib import Path
-import colorlog  # Install via: pip install colorlog
-import io
+import colorlog
 
 # ANSI background color codes
 BLUE_BG = "\033[44m"
