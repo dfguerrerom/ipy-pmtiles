@@ -1,15 +1,10 @@
-import os
 import json
-import asyncio
 from pathlib import Path
-from typing import Dict, Union, Optional, Any, List
+from typing import Dict, Tuple, Union, Optional, Any, List
 import shutil
 
 import httpx
-from pyvectortiles.handler import (
-    get_metadata,
-    get_source_bounds,
-)
+from pyvectortiles.handler import get_metadata
 from pyvectortiles.styles import generate_default_map_style
 from pyvectortiles.logger import logger
 
@@ -40,7 +35,6 @@ class TileClient:
 
         Args:
             data_source: Path to the vector data source (GeoJSON, Shapefile, PMTiles, etc.)
-            pmtiles_directory: Directory to store or find the PMTiles file and metadata.
             host: Host where the server is running.
             port: Port where the server is running.
             converter: Custom TileConverter instance to use.
@@ -48,7 +42,7 @@ class TileClient:
             allowed_directories: List of directories that can be accessed by the server.
             http_client: Custom HTTP client for testing.
         """
-        logger.info(f"Initializing tile client with data source: {data_source}")
+        logger.debug(f"Initializing tile client with data source: {data_source}")
 
         self.data_source = Path(data_source) if data_source else None
         self.host = host
@@ -59,13 +53,10 @@ class TileClient:
         self.allowed_directories = allowed_directories
         self._http_client = http_client
 
-        self.pmtiles_directory = self._determine_pmtiles_directory()
+        self.pmtiles_directory = self.data_source.parent
         self.metadata = None
 
-        if self.data_source:
-            self._process_data_source()
-        elif self.pmtiles_directory:
-            self._find_existing_pmtiles()
+        self._process_data_source()
 
         if self.pmtiles_path is None:
             raise ValueError(
@@ -84,97 +75,23 @@ class TileClient:
         """Get the URL for the PMTiles file with its filePath."""
         return f"{self.server_url}/pmtiles?filePath={self.pmtiles_path}"
 
+    @property
+    def bounds(self) -> List:
+        """Get the bounds of the PMTiles file."""
+        return self.metadata.get("bounds", [])
+
+    @property
+    def center(self) -> Tuple:
+        """Get the center of the PMTiles file."""
+        return self.metadata.get("center", [])
+
     def get_metadata(self) -> Dict[str, Any]:
         """Get metadata for the PMTiles file."""
-        return asyncio.run(get_metadata(self.pmtiles_path))
+        return get_metadata(self.pmtiles_path)
 
     def list_layers(self):
         """Return a list of available vector layer IDs from the metadata."""
         return [layer.get("id") for layer in self.metadata.get("vector_layers", [])]
-
-    def bounds(
-        self,
-        projection: str = "EPSG:4326",
-        return_polygon: bool = False,
-        return_wkt: bool = False,
-    ):
-        bounds = get_source_bounds(self.metadata, projection=projection)
-        extent = (bounds["bottom"], bounds["top"], bounds["left"], bounds["right"])
-        if not return_polygon and not return_wkt:
-            return extent
-        # Safely import shapely
-        try:
-            from shapely.geometry import Polygon
-        except ImportError as e:  # pragma: no cover
-            raise ImportError(f"Please install `shapely`: {e}")
-        coords = (
-            (bounds["left"], bounds["top"]),
-            (bounds["left"], bounds["top"]),
-            (bounds["right"], bounds["top"]),
-            (bounds["right"], bounds["bottom"]),
-            (bounds["left"], bounds["bottom"]),
-            (bounds["left"], bounds["top"]),  # Close the loop
-        )
-        poly = Polygon(coords)
-        if return_wkt:
-            return poly.wkt
-        return poly
-
-    def center(
-        self,
-        projection: str = "EPSG:4326",
-        return_point: bool = False,
-        return_wkt: bool = False,
-    ):
-        """Get center in the form of (y <lat>, x <lon>).
-
-        Parameters
-        ----------
-        projection : str
-            The srs or projection as a Proj4 string of the returned coordinates
-
-        return_point : bool, optional
-            If true, returns a shapely.Point object.
-
-        return_wkt : bool, optional
-            If true, returns a Well Known Text (WKT) string of center
-            coordinates.
-
-        """
-        bounds = self.bounds(projection=projection)
-        point = (
-            (bounds[1] - bounds[0]) / 2 + bounds[0],
-            (bounds[3] - bounds[2]) / 2 + bounds[2],
-        )
-        if return_point or return_wkt:
-            # Safely import shapely
-            try:
-                from shapely.geometry import Point
-            except ImportError as e:  # pragma: no cover
-                raise ImportError(f"Please install `shapely`: {e}")
-
-            point = Point(point)
-            if return_wkt:
-                return point.wkt
-
-        return point
-
-    def _determine_pmtiles_directory(self) -> Path:
-        """
-        Determine the PMTiles directory based on input and data source.
-
-        Args:
-            pmtiles_directory: Explicitly provided directory or None
-
-        Returns:
-            Path object for the PMTiles directory
-        """
-        if self.data_source:
-            if self.data_source.suffix.lower() == ".pmtiles":
-                return self.data_source.parent
-            else:
-                return self.data_source.parent / f"{self.data_source.stem}_pmtiles"
-        return None
 
     def _process_data_source(self) -> None:
         """Process the data source file."""
@@ -182,31 +99,16 @@ class TileClient:
         if self.data_source.suffix.lower() == ".pmtiles":
             self._handle_pmtiles()
 
-        else:
-            # For other vector formats
-            if self.pmtiles_directory.exists():
-                existing_pmtiles = self._find_pmtiles_files(self.pmtiles_directory)
-                if existing_pmtiles:
-                    self.pmtiles_path = existing_pmtiles[0]
-                    logger.info(f"Using existing PMTiles file: {self.pmtiles_path}")
-                else:
-                    self._convert_vector_data()
-            else:
-                self._ensure_directory(self.pmtiles_directory)
-                self._convert_vector_data()
-
-        self.metadata = self.get_metadata()
-
-    def _find_existing_pmtiles(self) -> None:
-        """Find existing PMTiles files in the pmtiles directory."""
-
-        if self.pmtiles_directory and self.pmtiles_directory.exists():
-            existing_pmtiles = self._find_pmtiles_files(self.pmtiles_directory)
-            if existing_pmtiles:
-                self.pmtiles_path = existing_pmtiles[0]
-                logger.info(
+        elif existing_pmtiles := self._find_pmtiles_files(self.pmtiles_directory):
+            if self.data_source.with_suffix(".pmtiles") in existing_pmtiles:
+                self.pmtiles_path = self.data_source.with_suffix(".pmtiles")
+                logger.debug(
                     f"Found PMTiles file in provided directory: {self.pmtiles_path}"
                 )
+        else:
+            self._convert_vector_data()
+
+        self.metadata = self.get_metadata()
 
     def _handle_pmtiles(self) -> None:
         """Handle a PMTiles file directly without conversion.
@@ -214,19 +116,17 @@ class TileClient:
         If the metadata file is not present in the same folder as the PMTiles file,
         create it.
         """
-        logger.info(f"Using PMTiles file directly: {self.data_source}")
+        logger.debug(f"Using PMTiles file directly: {self.data_source}")
 
         if not self.data_source.exists():
             raise FileNotFoundError(f"PMTiles file not found: {self.data_source}")
-
-        self._ensure_directory(self.pmtiles_directory)
 
         dest_file = self.pmtiles_directory / self.data_source.name
         if (
             not dest_file.exists()
             or dest_file.stat().st_mtime < self.data_source.stat().st_mtime
         ):
-            logger.info(f"Copying PMTiles file to {dest_file}")
+            logger.debug(f"Copying PMTiles file to {dest_file}")
             shutil.copy2(self.data_source, dest_file)
 
         self.pmtiles_path = dest_file
@@ -235,7 +135,7 @@ class TileClient:
         """
         Process vector data formats and convert to PMTiles if needed.
         """
-        logger.info(
+        logger.debug(
             f"Processing vector data: {self.data_source} -> {self.pmtiles_directory}"
         )
 
@@ -245,13 +145,10 @@ class TileClient:
             converter = TileConverter(self.data_source, self.pmtiles_directory)
 
         # Convert the data
-        converter.convert(**self.conversion_options)
+        if pmtiles_path := converter.convert(**self.conversion_options):
+            logger.debug(f"Converted data to PMTiles: {self.pmtiles_path}")
+            self.pmtiles_path = pmtiles_path
 
-        # Look for the generated PMTiles file
-        pmtiles_files = self._find_pmtiles_files(self.pmtiles_directory)
-        if pmtiles_files:
-            self.pmtiles_path = pmtiles_files[0]
-            logger.info(f"Created PMTiles file: {self.pmtiles_path}")
         else:
             raise RuntimeError(
                 f"No PMTiles file was generated in {self.pmtiles_directory}"
@@ -262,7 +159,7 @@ class TileClient:
         Ensure the tile server is running.
         """
         if self.port is not None and is_port_in_use(self.port):
-            logger.info(f"Using existing server at port {self.port}")
+            logger.debug(f"Using existing server at port {self.port}")
             return
 
         server = TileServer.get_instance(
@@ -321,10 +218,3 @@ class TileClient:
         """Find PMTiles files in a directory."""
 
         return list(directory.glob("*.pmtiles"))
-
-    @staticmethod
-    def _ensure_directory(path: Path) -> Path:
-        """Ensure a directory exists."""
-        path.mkdir(parents=True, exist_ok=True)
-
-        return path

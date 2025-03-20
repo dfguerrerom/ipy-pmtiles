@@ -3,11 +3,7 @@ from starlette.routing import Route
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 
-from pyvectortiles.endpoints import (
-    pmtiles_endpoint,
-    health_endpoint,
-    shutdown_endpoint,
-)
+from pyvectortiles.endpoints import pmtiles_endpoint, shutdown_endpoint
 
 
 def create_app(tile_server_instance):
@@ -20,7 +16,6 @@ def create_app(tile_server_instance):
         return await pmtiles_endpoint(request, tile_server_instance)
 
     routes = [
-        Route("/health", health_endpoint),
         Route("/shutdown", shutdown_wrapper),
         Route("/pmtiles", pmtiles_wrapper),
     ]

@@ -105,7 +105,7 @@ class TileServer:
     def start(self) -> None:
         """Start the server in a background thread."""
         if self.is_running:
-            logger.info(
+            logger.debug(
                 f"Server already running at http://{self.config.host}:{self.config.port}"
             )
             return
@@ -126,7 +126,7 @@ class TileServer:
             raise TimeoutError(f"Server failed to start within timeout period")
 
         self.is_running = True
-        logger.info(
+        logger.debug(
             f"PMTiles server running at http://{self.config.host}:{self.config.port}"
         )
 
@@ -176,7 +176,7 @@ class TileServer:
     def stop(self) -> None:
         """Stop the server properly."""
         if self.is_running:
-            logger.info("Stopping server...")
+            logger.debug("Stopping server...")
             self.shutdown_event.set()
 
             # Give the server some time to shut down
@@ -184,7 +184,7 @@ class TileServer:
                 self.server_thread.join(timeout=5)
 
             self.is_running = False
-            logger.info("Server stopped")
+            logger.debug("Server stopped")
 
     def __del__(self) -> None:
         """Ensure server resources are cleaned up."""

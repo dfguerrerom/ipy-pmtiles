@@ -127,7 +127,7 @@ class TileConverter:
             return input_path
 
         # Convert to GeoJSON
-        logger.info(f"Converting {input_path} to GeoJSON")
+        logger.debug(f"Converting {input_path} to GeoJSON")
         gdf = gpd.read_file(input_path)
 
         # Create a temporary GeoJSON file

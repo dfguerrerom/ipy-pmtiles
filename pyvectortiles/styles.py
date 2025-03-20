@@ -1,3 +1,5 @@
+# https://docs.mapbox.com/style-spec/reference/layers/
+
 import random
 
 
@@ -16,7 +18,7 @@ def build_categorized_expression(categorized_field, categorized_values):
     expr = ["match", ["get", categorized_field]]
     for value in categorized_values:
         expr.extend([value, random_color()])
-    expr.append("#CCCCCC")  # default color if no value matches
+    expr.append("#CCCCCC")
     return expr
 
 
@@ -89,17 +91,14 @@ def generate_default_map_style(
       dict: A style JSON dictionary.
     """
     layers = []
-    # Default palette for single_symbol mode
     default_palette = ["#FF6347", "#32CD32", "#1E90FF", "#FFD700", "#9370DB"]
 
-    # Process each vector layer from metadata
     for i, vector_layer in enumerate(metadata.get("vector_layers", [])):
         layer_id = vector_layer.get("id")
         minzoom = vector_layer.get("minzoom", 0)
         maxzoom = vector_layer.get("maxzoom", 22)
 
         if style_mode == "single_symbol":
-            # Pick a consistent color from the palette
             fill_color = default_palette[i % len(default_palette)]
         elif style_mode == "categorized":
             if not categorized_field:
@@ -107,7 +106,6 @@ def generate_default_map_style(
                     "categorized_field must be provided when using categorized style_mode."
                 )
             if categorized_values is None:
-                # In a complete solution, you could extract unique values from the PMTiles data.
                 raise ValueError(
                     "categorized_values must be provided for categorized style_mode."
                 )
@@ -119,12 +117,10 @@ def generate_default_map_style(
                 "Invalid style_mode. Use 'single_symbol' or 'categorized'."
             )
 
-        # Generate both fill and outline layers
         fill_layer = create_fill_layer(layer_id, minzoom, maxzoom, fill_color)
         outline_layer = create_outline_layer(layer_id, minzoom, maxzoom)
         layers.extend([fill_layer, outline_layer])
 
-    # Build the complete style JSON
     style = {
         "version": 8,
         "sources": {

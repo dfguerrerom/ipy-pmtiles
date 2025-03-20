@@ -1,5 +1,6 @@
 from typing import Iterator, Optional, TYPE_CHECKING
 
+import re
 from pathlib import Path
 
 from starlette.responses import (
@@ -11,8 +12,6 @@ from starlette.responses import (
 )
 from starlette.requests import Request
 
-from aiopmtiles import Reader
-import re
 from pyvectortiles.logger import logger
 
 if TYPE_CHECKING:
@@ -173,11 +172,6 @@ async def pmtiles_endpoint(
         headers=headers,
         media_type="application/octet-stream",
     )
-
-
-async def health_endpoint(request: Request) -> Response:
-    """Health check endpoint."""
-    return JSONResponse({"status": "ok", "server_version": "1.0.0"})
 
 
 async def shutdown_endpoint(
