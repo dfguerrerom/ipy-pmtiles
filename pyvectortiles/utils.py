@@ -5,9 +5,6 @@ This module provides helper functions for working with PMTiles format.
 """
 
 import socket
-from pathlib import Path
-from typing import Union
-import os
 
 
 def get_free_port(start_port=8000, max_port=9000):
