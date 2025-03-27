@@ -182,7 +182,7 @@ class TileClient:
 
         """
         try:
-            from ipyleaflet import PMTilesLayer
+            from pyvectortiles.pmtiles_layer import LeafletPMTilesLayer
 
             style_json = generate_default_map_style(self.metadata, self.pmtiles_url)
 
@@ -201,13 +201,14 @@ class TileClient:
 
                 logger.debug(f"Filtered style JSON: {json.dumps(style_json, indent=2)}")
 
-            return PMTilesLayer(
+            return LeafletPMTilesLayer(
                 url=self.pmtiles_url,
                 style=style or style_json,
                 attribution="Vector Tile Server",
                 visible=True,
             )
-        except ImportError:
+        except Exception as e:
+            raise e
             raise ImportError(
                 "ipyleaflet is required to create a leaflet layer. "
                 "Install it with 'pip install ipyleaflet'."
