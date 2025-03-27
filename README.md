@@ -1,6 +1,6 @@
-# 🌐 Local Vector Tiles Server
+# 🌐 Ipy PM Tiles
 
-A dynamic vector tile server for visualizing vector data in Jupyter, inspired by `localtileserver` and `leafmap`.
+A dynamic vector tile handler for visualizing pmtiles data in Jupyter, inspired by `localtileserver`, `leafmap`, `protomaps-leaflet` and `maplibre-gl`.
 
 With `TileClient`, you can easily create a local vector tile server to visualize PMTiles in `ipyleaflet`.
 
