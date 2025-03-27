@@ -6,7 +6,7 @@ from pmtiles.reader import Reader, MmapSource
 def get_metadata(pmtiles_path: Union[str, Path]) -> Dict[str, Any]:
     """Get metadata from a PMTiles file."""
 
-    with open(pmtiles_path, "r") as f:
+    with open(pmtiles_path, "rb") as f:
         reader = Reader(MmapSource(f))
         header = reader.header()
         metadata = reader.metadata()
