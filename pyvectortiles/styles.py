@@ -179,6 +179,8 @@ def build_categorized_expression(categorized_field, categorized_values):
 
 
 def create_fill_layer(layer_id, minzoom, maxzoom, fill_color):
+    opacity = 0 if layer_id.lower() in ["mask", "earth"] else 0.5
+
     return {
         "id": f"{layer_id}-fill",
         "type": "fill",
@@ -186,7 +188,7 @@ def create_fill_layer(layer_id, minzoom, maxzoom, fill_color):
         "source-layer": layer_id,
         "minzoom": minzoom,
         "maxzoom": maxzoom,
-        "paint": {"fill-color": fill_color, "fill-opacity": 0.5},
+        "paint": {"fill-color": fill_color, "fill-opacity": opacity},
     }
 
 
